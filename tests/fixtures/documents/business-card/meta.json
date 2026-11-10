@@ -1,0 +1,18 @@
+{
+  "title": "Business card",
+  "type": "business_card",
+  "tags": [
+    "front-back",
+    "dark-background"
+  ],
+  "notes": "Name and title on a dark front; all contact details on the back.",
+  "expected": {
+    "full_name": "Meera Iyer",
+    "job_title": "Head of Product Engineering",
+    "company": "Quillstone Labs",
+    "phone": "+91 98450 31277",
+    "email": "meera.iyer@quillstone.io",
+    "website": "www.quillstone.io",
+    "address": "3rd Floor, 88 Residency Road, Bengaluru 560025"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "title": "Grocery receipt, phone photo",
+  "type": "receipt",
+  "tags": [
+    "single-page",
+    "photo",
+    "thermal",
+    "monospace"
+  ],
+  "notes": "Faded thermal print, photographed at an angle.",
+  "expected": {
+    "merchant_name": "Green Basket Mart",
+    "date": "2026-11-08",
+    "time": "18:42",
+    "subtotal": 1221.0,
+    "tax": 61.05,
+    "total": 1282.05,
+    "payment_method": "UPI",
+    "items": [
+      {
+        "description": "TOMATO 1KG",
+        "amount": 48.0
+      },
+      {
+        "description": "BASMATI RICE 5KG",
+        "amount": 612.0
+      },
+      {
+        "description": "AMUL BUTTER 500G",
+        "amount": 285.0
+      },
+      {
+        "description": "BANANA 12PC",
+        "amount": 72.0
+      },
+      {
+        "description": "DISH SOAP 750ML",
+        "amount": 149.0
+      },
+      {
+        "description": "BREAD BROWN",
+        "amount": 55.0
+      }
+    ]
+  }
+}

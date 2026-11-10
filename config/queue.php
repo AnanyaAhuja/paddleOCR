@@ -73,6 +73,17 @@ return [
             'after_commit' => false,
         ],
 
+        // Document extraction (OCR + VLM) can run for minutes, so it gets its
+        // own connection whose retry_after outlives the job's 300s timeout.
+        'redis-documents' => [
+            'driver' => 'redis',
+            'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
+            'queue' => 'documents',
+            'retry_after' => 330,
+            'block_for' => null,
+            'after_commit' => false,
+        ],
+
         'deferred' => [
             'driver' => 'deferred',
         ],

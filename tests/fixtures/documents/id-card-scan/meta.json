@@ -1,0 +1,19 @@
+{
+  "title": "ID card, clean scan",
+  "type": "id_card",
+  "tags": [
+    "front-back",
+    "scan"
+  ],
+  "notes": "Address and issue date are only on the back.",
+  "expected": {
+    "full_name": "Anika Rose Mendes",
+    "date_of_birth": "1991-03-14",
+    "sex": "F",
+    "id_number": "EST4829173K",
+    "nationality": "Estovian",
+    "issue_date": "2021-08-13",
+    "expiry_date": "2031-08-12",
+    "address": "12 Maple Court, Riverside, Northgate 40211"
+  }
+}

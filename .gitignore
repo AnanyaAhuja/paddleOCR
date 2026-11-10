@@ -26,3 +26,12 @@ Homestead.json
 Homestead.yaml
 Thumbs.db
 /docker/proxy/ssl
+
+# Never commit secrets or private data
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+/storage/app/private/
+/storage/app/benchmarks/

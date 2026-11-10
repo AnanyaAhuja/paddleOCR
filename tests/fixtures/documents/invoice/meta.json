@@ -1,0 +1,39 @@
+{
+  "title": "Tax invoice",
+  "type": "invoice",
+  "tags": [
+    "single-page",
+    "table",
+    "currency-symbol"
+  ],
+  "notes": "A4, four line items, ₹ amounts with thousands separators.",
+  "expected": {
+    "vendor_name": "Northwind Analytics Pvt Ltd",
+    "invoice_number": "INV-2026-0417",
+    "invoice_date": "2026-10-03",
+    "due_date": "2026-11-02",
+    "bill_to": "Lumen Retail LLP",
+    "currency": "INR",
+    "subtotal": 146000.0,
+    "tax": 26280.0,
+    "total": 172280.0,
+    "line_items": [
+      {
+        "description": "Data pipeline setup",
+        "amount": 85000.0
+      },
+      {
+        "description": "Dashboard licences (12 users)",
+        "amount": 18000.0
+      },
+      {
+        "description": "Monthly support retainer",
+        "amount": 25000.0
+      },
+      {
+        "description": "On-site training (half day)",
+        "amount": 18000.0
+      }
+    ]
+  }
+}

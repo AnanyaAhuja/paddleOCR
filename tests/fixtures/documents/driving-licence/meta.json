@@ -1,0 +1,24 @@
+{
+  "title": "Driving licence",
+  "type": "driving_licence",
+  "tags": [
+    "front-back",
+    "numbered-fields",
+    "table"
+  ],
+  "notes": "EU-style numbered fields; categories and restriction code on the back.",
+  "expected": {
+    "full_name": "Daniel Chukwuemeka Okafor",
+    "date_of_birth": "1986-07-22",
+    "licence_number": "OKAFO 860722 D99",
+    "issue_date": "2024-02-05",
+    "expiry_date": "2034-02-04",
+    "address": "4 Harbour Road, Eastport 30915",
+    "vehicle_classes": [
+      "AM",
+      "A1",
+      "B"
+    ],
+    "restrictions": "01"
+  }
+}

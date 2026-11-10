@@ -1,7 +1,7 @@
 .PHONY: help setup bootstrap ssl up down restart logs ps build rebuild destroy prune \
         shell shell-worker shell-scheduler shell-mysql shell-redis shell-proxy \
         composer artisan npm init migrate seed fresh test pint reload \
-        wait-app check-hosts check-cert hooks urls rename
+        wait-app check-hosts check-cert hosts hooks urls rename
 
 DC          := docker compose
 APP_SERVICE := app
@@ -9,6 +9,9 @@ SERVICE     ?=
 SSL_CRT     := docker/proxy/ssl/star.starter.local.crt
 # Every vhost the edge proxy serves; `check-hosts` verifies each is in /etc/hosts.
 DOMAINS     := starter.local mail.starter.local
+HOSTS_FILE  ?= /etc/hosts
+# True when domain $$d appears on an uncommented line of the hosts file.
+HOSTS_MATCH  = grep -qE "^[[:space:]]*[^\#[:space:]][^[:space:]]*[[:space:]]+(.*[[:space:]])?$$d([[:space:]]|$$)" $(HOSTS_FILE)
 
 help:
 	@echo "Starter — Docker Development Environment"
@@ -18,6 +21,7 @@ help:
 	@echo "  make up                           - Start all services (builds images if missing)"
 	@echo "  make init                         - Create/reset the database, migrate + seed (prompts)"
 	@echo "  make bootstrap                    - setup + up + init, in one go"
+	@echo "  make hosts                        - Add the local domains to /etc/hosts (needs sudo, once per machine)"
 	@echo "  make ssl                          - Generate SSL certs (keeps a valid existing one)"
 	@echo "  FORCE=1 make ssl                  - Replace a still-valid cert (re-trust it afterwards)"
 	@echo "  make up SERVICE=worker            - Start a specific service"
@@ -85,16 +89,35 @@ hooks:
 check-hosts:
 	@missing=""; \
 	for d in $(DOMAINS); do \
-		grep -qE "^[[:space:]]*[^#][^[:space:]]*[[:space:]]+$$d([[:space:]]|$$)" /etc/hosts || missing="$$missing $$d"; \
+		$(HOSTS_MATCH) || missing="$$missing $$d"; \
 	done; \
 	if [ -n "$$missing" ]; then \
-		echo "TODO — add these to /etc/hosts (needs sudo):"; \
-		for d in $$missing; do echo "  127.0.0.1 $$d"; done; \
+		echo "TODO — missing from $(HOSTS_FILE):$$missing"; \
+		echo "  make hosts    (needs sudo)"; \
 		echo ""; \
 	else \
 		echo "OK: /etc/hosts entries are all present."; \
 		echo ""; \
 	fi
+
+# Append whichever domains are missing, and nothing else, so it is safe to
+# re-run. Only asks for sudo when there is something to add.
+hosts:
+	@missing=""; \
+	for d in $(DOMAINS); do \
+		$(HOSTS_MATCH) || missing="$$missing $$d"; \
+	done; \
+	if [ -z "$$missing" ]; then \
+		echo "OK: /etc/hosts entries are all present."; \
+		exit 0; \
+	fi; \
+	if [ -w "$(HOSTS_FILE)" ]; then SUDO=""; else SUDO="sudo"; fi; \
+	echo "Adding to $(HOSTS_FILE)$${SUDO:+ (needs sudo)}:$$missing"; \
+	if [ -n "$$(tail -c1 $(HOSTS_FILE))" ]; then echo | $$SUDO tee -a $(HOSTS_FILE) >/dev/null || exit 1; fi; \
+	for d in $$missing; do \
+		echo "127.0.0.1 $$d" | $$SUDO tee -a $(HOSTS_FILE) >/dev/null || exit 1; \
+		echo "  added 127.0.0.1 $$d"; \
+	done
 
 # The cert only needs trusting once per machine.
 check-cert:

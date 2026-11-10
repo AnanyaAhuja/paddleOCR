@@ -8,7 +8,7 @@ name: starter
 # Host ports, all on loopback. Change them here if they collide with another
 # stack running at the same time:
 #
-#   https    443      edge proxy (starter.local, mail.starter.local)
+#   https    443      edge proxy (starter.local, mail.starter.local); HTTPS_PORT in .env overrides
 #   http     80       redirects to https
 #   mysql    33064
 #   redis    63793
@@ -23,6 +23,12 @@ x-app: &app
     - composer_cache:/tmp/composer-cache
   networks:
     - starter-network
+  # Qwen VLM served by Docker Model Runner (see `models:` at the bottom). Compose
+  # injects its OpenAI-compatible base URL and model name as these env vars.
+  models:
+    qwen_vl:
+      endpoint_var: QWEN_VL_URL
+      model_var: QWEN_VL_MODEL
 
 services:
   app:
@@ -112,6 +118,30 @@ services:
     networks:
       - starter-network
 
+  # PaddleOCR (Python SDK) behind a small HTTP API; the app calls http://ocr:8000.
+  # PaddlePaddle ships x86_64 Linux wheels only, so this runs emulated on Apple
+  # Silicon. Models are baked into the image at build time.
+  ocr:
+    build:
+      context: docker/ocr
+      dockerfile: Dockerfile
+    image: starter-ocr
+    platform: linux/amd64
+    container_name: starter-ocr
+    restart: unless-stopped
+    environment:
+      # oneDNN CPU backend: ~4.5x faster here (70s -> 15s per ID card side).
+      # Needs paddlepaddle 3.2.x; 3.3.x crashes with it on.
+      OCR_ENABLE_MKLDNN: "1"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    networks:
+      - starter-network
+
   # Edge reverse proxy: SSL termination and host-based routing only. It knows
   # container names and ports, never application layout.
   proxy:
@@ -125,7 +155,9 @@ services:
       - mailpit
     ports:
       - "127.0.0.1:80:80"
-      - "127.0.0.1:443:443"
+      # HTTPS_PORT in .env overrides the host port, e.g. 8443 on a machine
+      # where something resets TLS on 443. Then use https://starter.local:8443.
+      - "127.0.0.1:${HTTPS_PORT:-443}:443"
     volumes:
       - ./docker/proxy/ssl:/etc/nginx/ssl:ro
     networks:
@@ -148,6 +180,13 @@ services:
       - mailpit_data:/data
     networks:
       - starter-network
+
+# Runs on the host GPU (Metal) via Docker Model Runner, not inside the Docker VM.
+# 4B at 4-bit is ~3.4 GB; swap the tag for ai/qwen3-vl:2B-UD-Q4_K_XL to go lighter.
+models:
+  qwen_vl:
+    model: ai/qwen3-vl:4B-UD-Q4_K_XL
+    context_size: 16384
 
 volumes:
   composer_cache:

@@ -1,0 +1,20 @@
+{
+  "title": "Resident card, Hindi + English",
+  "type": "id_card",
+  "tags": [
+    "front-back",
+    "bilingual",
+    "devanagari"
+  ],
+  "notes": "Labels in Hindi and English; sex is printed as 'महिला / Female'.",
+  "expected": {
+    "full_name": "Priya Sharma",
+    "date_of_birth": "1994-11-05",
+    "sex": "F",
+    "id_number": "482177305196",
+    "nationality": "Indian",
+    "issue_date": "2025-01-02",
+    "expiry_date": "2034-12-31",
+    "address": "Flat 7B, Gulmohar Apartments, Sector 21, Dwarka, New Delhi 110077"
+  }
+}

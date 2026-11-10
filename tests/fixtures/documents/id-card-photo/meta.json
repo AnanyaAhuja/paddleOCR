@@ -1,0 +1,21 @@
+{
+  "title": "ID card, phone photo",
+  "type": "id_card",
+  "tags": [
+    "front-back",
+    "photo",
+    "skew",
+    "blur"
+  ],
+  "notes": "Same card as id-card-scan: perspective, rotation, blur, uneven light, JPEG q55.",
+  "expected": {
+    "full_name": "Anika Rose Mendes",
+    "date_of_birth": "1991-03-14",
+    "sex": "F",
+    "id_number": "EST4829173K",
+    "nationality": "Estovian",
+    "issue_date": "2021-08-13",
+    "expiry_date": "2031-08-12",
+    "address": "12 Maple Court, Riverside, Northgate 40211"
+  }
+}

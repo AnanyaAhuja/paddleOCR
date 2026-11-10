@@ -210,6 +210,20 @@ return [
             'timeout' => 60,
             'nice' => 0,
         ],
+
+        // One at a time: the VLM shares one GPU and PaddleOCR is CPU-bound.
+        'documents' => [
+            'connection' => 'redis-documents',
+            'queue' => ['documents'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 300,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
