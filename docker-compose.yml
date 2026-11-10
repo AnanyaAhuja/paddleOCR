@@ -1,0 +1,165 @@
+name: starter
+
+# One image (docker/Dockerfile, target `local`), three roles. The role each
+# container plays comes from APP_ROLE; the entrypoint picks the matching
+# supervisor program set. The `app` container provisions the checkout on first
+# boot (.env, Composer, npm, app key, assets); the others wait for it.
+#
+# Host ports, all on loopback. Change them here if they collide with another
+# stack running at the same time:
+#
+#   https    443      edge proxy (starter.local, mail.starter.local)
+#   http     80       redirects to https
+#   mysql    33064
+#   redis    63793
+
+# Built once, by the `app` service; worker and scheduler reuse the image.
+x-app: &app
+  image: starter-app
+  init: true
+  restart: unless-stopped
+  volumes:
+    - .:/app
+    - composer_cache:/tmp/composer-cache
+  networks:
+    - starter-network
+
+services:
+  app:
+    <<: *app
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: local
+    container_name: starter-app
+    environment:
+      APP_ROLE: api
+      COMPOSER_HOME: /tmp/composer-cache
+      DOMAIN_APP: starter.local
+      PHP_IDE_CONFIG: "serverName=StarterApp"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    <<: *app
+    container_name: starter-worker
+    environment:
+      APP_ROLE: worker
+      COMPOSER_HOME: /tmp/composer-cache
+      PHP_IDE_CONFIG: "serverName=StarterWorker"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      app:
+        condition: service_started
+
+  # Runs `schedule:run` every minute via cron. Only this role starts cron — see
+  # docker/supervisor/scheduler.conf.
+  scheduler:
+    <<: *app
+    container_name: starter-scheduler
+    environment:
+      APP_ROLE: scheduler
+      COMPOSER_HOME: /tmp/composer-cache
+      PHP_IDE_CONFIG: "serverName=StarterScheduler"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      app:
+        condition: service_started
+
+  mysql:
+    build:
+      context: docker/mysql
+      dockerfile: Dockerfile
+    container_name: starter-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: secret
+      MYSQL_DATABASE: starter
+      MYSQL_USER: starter
+      MYSQL_PASSWORD: secret
+    ports:
+      - "127.0.0.1:33064:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-psecret"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - starter-network
+
+  redis:
+    build:
+      context: docker/redis
+      dockerfile: Dockerfile
+    container_name: starter-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:63793:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - starter-network
+
+  # Edge reverse proxy: SSL termination and host-based routing only. It knows
+  # container names and ports, never application layout.
+  proxy:
+    build:
+      context: docker/proxy
+      dockerfile: Dockerfile
+    container_name: starter-proxy
+    restart: unless-stopped
+    depends_on:
+      - app
+      - mailpit
+    ports:
+      - "127.0.0.1:80:80"
+      - "127.0.0.1:443:443"
+    volumes:
+      - ./docker/proxy/ssl:/etc/nginx/ssl:ro
+    networks:
+      starter-network:
+        aliases:
+          - starter.local
+          - mail.starter.local
+
+  # The app talks to it as mailpit:1025 over the compose network; the web UI is
+  # served through the edge proxy at https://mail.starter.local.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: starter-mailpit
+    restart: unless-stopped
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+      MP_MAX_MESSAGES: "5000"
+    volumes:
+      - mailpit_data:/data
+    networks:
+      - starter-network
+
+volumes:
+  composer_cache:
+    driver: local
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+  mailpit_data:
+    driver: local
+
+networks:
+  starter-network:
+    name: starter-network
+    driver: bridge

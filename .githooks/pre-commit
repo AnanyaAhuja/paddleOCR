@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+compose_file="docker-compose.yml"
+service="app"
+tmp_root=""
+
+cleanup() {
+    local exit_code="$?"
+
+    trap - EXIT
+
+    if [ -n "$tmp_root" ] && [ -d "$tmp_root" ]; then
+        rm -rf "$tmp_root"
+    fi
+
+    exit "$exit_code"
+}
+
+trap cleanup EXIT
+
+php_files=()
+while IFS= read -r -d '' file; do
+    php_files+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.php')
+
+if [ "${#php_files[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+if ! command -v docker >/dev/null 2>&1; then
+    echo "pre-commit: docker is required to run Laravel Pint." >&2
+    echo "pre-commit: install Docker or start Docker Desktop, then retry the commit." >&2
+    exit 1
+fi
+
+if [ ! -f "$compose_file" ]; then
+    echo "pre-commit: expected Docker Compose file at '$compose_file'." >&2
+    echo "pre-commit: run this hook from the repository root." >&2
+    exit 1
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    echo "pre-commit: the Docker daemon is not available." >&2
+    echo "pre-commit: start Docker Desktop, then retry the commit." >&2
+    exit 1
+fi
+
+running_service="$(docker compose -f "$compose_file" ps --services --status running "$service" 2>/dev/null || true)"
+if [ "$running_service" != "$service" ]; then
+    echo "pre-commit: the '$service' container must be running to format staged PHP files." >&2
+    echo "pre-commit: run 'docker compose -f $compose_file up -d $service' and retry the commit." >&2
+    exit 1
+fi
+
+tmp_root="$(mktemp -d "$(git rev-parse --git-dir)/pint-hook.XXXXXX")"
+
+temp_php_files=()
+for file in "${php_files[@]}"; do
+    temp_file="$tmp_root/$file"
+    mkdir -p "$(dirname "$temp_file")"
+
+    if ! git show ":$file" > "$temp_file"; then
+        echo "pre-commit: failed to read staged snapshot for '$file'." >&2
+        exit 1
+    fi
+
+    temp_php_files+=("${temp_file#./}")
+done
+
+echo "pre-commit: formatting staged PHP snapshot with Laravel Pint..." >&2
+docker compose -f "$compose_file" exec -T "$service" php ./vendor/bin/pint -- "${temp_php_files[@]}"
+
+for i in "${!php_files[@]}"; do
+    file="${php_files[$i]}"
+    temp_file="${temp_php_files[$i]}"
+    mode="$(git ls-files --stage -- "$file" | awk 'NR == 1 { print $1 }')"
+
+    if [ -z "$mode" ]; then
+        echo "pre-commit: failed to read staged mode for '$file'." >&2
+        exit 1
+    fi
+
+    blob="$(git hash-object -w --path="$file" -- "$temp_file")"
+    git update-index --cacheinfo "$mode" "$blob" "$file"
+done

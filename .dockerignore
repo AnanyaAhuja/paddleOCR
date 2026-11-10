@@ -1,0 +1,18 @@
+node_modules
+vendor
+.git
+.env
+storage/**
+!storage/**/.gitignore
+bootstrap/cache/*.php
+public/build
+public/hot
+docker/proxy/ssl
+.DS_Store
+*.log
+.idea
+.vscode
+.claude
+
+# Include docker configuration
+!docker/
