@@ -110,6 +110,22 @@ return [
                 'fiscal_code' => ['type' => 'string', 'side' => 'back', 'description' => 'CODICE FISCALE, 16 characters, on the back'],
                 'address' => ['type' => 'string', 'side' => 'back', 'description' => 'INDIRIZZO DI RESIDENZA on the back, one line'],
             ],
+            // Card mask: cut the card out of the photo, flatten it and turn it
+            // upright. Field masks: areas of the upright card (fractions of its
+            // width and height: x0, y0, x1, y1) read again, enlarged. Measured
+            // on real CIE 3.0 cards with some margin.
+            'masks' => [
+                'card' => true,
+                'zones' => [
+                    'front' => [
+                        ['name' => 'document_number', 'box' => [0.68, 0.0, 1.0, 0.16]],
+                    ],
+                    'back' => [
+                        ['name' => 'fiscal_code', 'box' => [0.0, 0.12, 0.50, 0.30]],
+                        ['name' => 'mrz', 'box' => [0.0, 0.66, 1.0, 1.0]],
+                    ],
+                ],
+            ],
         ],
 
     ],
@@ -126,6 +142,10 @@ return [
     | caught 82%, at the cost of more flagged fields.
     |
     */
+    // Switch the card and field masks off (DOCUMENT_MASKS=false) to compare
+    // with reading the whole photo.
+    'masks_enabled' => (bool) env('DOCUMENT_MASKS', true),
+
     'judge' => [
         'enabled' => (bool) env('JEV_ENABLED', true),
         // Served by Docker Model Runner on the Mac GPU, next to Qwen. The model

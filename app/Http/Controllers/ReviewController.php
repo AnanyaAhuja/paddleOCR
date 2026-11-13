@@ -20,6 +20,7 @@ class ReviewController extends Controller
         'to-review' => 'To review',
         'flagged' => 'Flagged',
         'reviewed' => 'Reviewed',
+        'changed' => 'Changed since review',
         'failed' => 'Failed',
         'all' => 'All',
     ];
@@ -30,22 +31,23 @@ class ReviewController extends Controller
 
         // Only what the list shows: the OCR text is large and not needed here.
         $query = DocumentExtraction::query()
-            ->select(['id', 'batch', 'case_number', 'status', 'back_path', 'fields', 'checks', 'judge', 'reviewed_at'])
+            ->select(['id', 'batch', 'case_number', 'status', 'back_path', 'fields', 'checks', 'judge', 'review', 'reviewed_at'])
             ->orderBy('batch')->orderBy('case_number');
 
         match ($filter) {
             'to-review' => $query->where('status', 'done')->unreviewed(),
             'flagged' => $query->where('status', 'done'),
-            'reviewed' => $query->reviewed(),
+            'reviewed', 'changed' => $query->reviewed(),
             'failed' => $query->where('status', 'failed'),
             default => $query,
         };
 
-        $rows = $query->get();
-        if ($filter === 'flagged') {
-            // Field statuses depend on the judge threshold in config, so filter in PHP.
-            $rows = $rows->filter->needsReview();
-        }
+        // These depend on field values (and the judge threshold), so filter in PHP.
+        $rows = match ($filter) {
+            'flagged' => $query->get()->filter->needsReview(),
+            'changed' => $query->get()->filter(fn (DocumentExtraction $row) => $row->changedSinceReview() !== []),
+            default => $query->get(),
+        };
 
         $byStatus = DocumentExtraction::query()->selectRaw('status, count(*) as n')->groupBy('status')->pluck('n', 'status');
 
@@ -68,6 +70,7 @@ class ReviewController extends Controller
             'row' => $extraction,
             'definition' => config("documents.types.{$extraction->document_type}"),
             'statuses' => $extraction->fieldStatuses(),
+            'changed' => $extraction->changedSinceReview(),
             'threshold' => (float) config('documents.judge.threshold'),
             'progress' => [
                 'reviewed' => DocumentExtraction::query()->reviewed()->count(),
@@ -91,10 +94,11 @@ class ReviewController extends Controller
 
         $review = collect($validated['review'])
             ->only($fields)
-            ->map(fn ($r) => [
-                'verdict' => $r['verdict'],
-                'corrected' => $r['verdict'] === 'wrong' ? ($r['corrected'] ?? null) : null,
-            ])
+            ->map(fn ($r, $field) => DocumentExtraction::reviewEntry(
+                $r['verdict'],
+                $extraction->fields[$field] ?? null,
+                $r['corrected'] ?? null,
+            ))
             ->all();
 
         if (count($review) !== count($fields)) {
@@ -116,13 +120,16 @@ class ReviewController extends Controller
             : redirect()->route('reviews.summary')->with('saved', 'All processed documents are reviewed.');
     }
 
-    public function image(DocumentExtraction $extraction, string $side): BinaryFileResponse
+    /** The original photo, or with ?card=1 the card cut out of it. */
+    public function image(Request $request, DocumentExtraction $extraction, string $side): BinaryFileResponse
     {
-        $path = match ($side) {
-            'front' => $extraction->front_path,
-            'back' => $extraction->back_path,
-            default => null,
-        };
+        $path = $request->boolean('card')
+            ? ($extraction->ocr[$side]['card']['path'] ?? null)
+            : match ($side) {
+                'front' => $extraction->front_path,
+                'back' => $extraction->back_path,
+                default => null,
+            };
 
         abort_if($path === null, 404);
 

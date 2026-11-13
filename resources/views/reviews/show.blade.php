@@ -14,13 +14,20 @@
 
     <section class="mb-6 grid gap-3 sm:grid-cols-2">
         @foreach (array_filter(['front' => $row->front_path, 'back' => $row->back_path]) as $side => $path)
+            @php($hasCard = isset($row->ocr[$side]['card']['path']))
+            @php($src = route('reviews.image', [$row, $side] + ($hasCard ? ['card' => 1] : [])))
             <figure class="rounded-xl border border-stone-200 bg-white p-2">
-                <div class="mb-1 flex items-center justify-between text-xs text-stone-500">
-                    <span>{{ ucfirst($side) }}</span>
+                <div class="mb-1 flex items-center justify-between gap-2 text-xs text-stone-500">
+                    <span>
+                        {{ ucfirst($side) }}{{ $hasCard ? ' · card cut out' : '' }}
+                        @if ($hasCard)
+                            · <a href="{{ route('reviews.image', [$row, $side]) }}" target="_blank" class="underline">original photo</a>
+                        @endif
+                    </span>
                     <button type="button" class="rounded border border-stone-300 px-2 py-0.5" onclick="rotate(this)">Rotate</button>
                 </div>
-                <a href="{{ route('reviews.image', [$row, $side]) }}" target="_blank" class="block overflow-hidden">
-                    <img src="{{ route('reviews.image', [$row, $side]) }}" alt="{{ $side }}" data-angle="0"
+                <a href="{{ $src }}" target="_blank" class="block overflow-hidden">
+                    <img src="{{ $src }}" alt="{{ $side }}" data-angle="0"
                          class="mx-auto max-h-[28rem] w-auto transition-transform">
                 </a>
             </figure>
@@ -56,10 +63,22 @@
                             @php($status = $statuses[$key] ?? 'unchecked')
                             @php($p = $row->judge['fields'][$key]['p_true'] ?? null)
                             @php($by = $row->checks[$key]['by'] ?? [])
-                            @php($verdict = old("review.$key.verdict", $row->review[$key]['verdict'] ?? null))
-                            <tr @class(['border-b border-stone-100 align-top last:border-0', 'bg-red-50' => $errors->any() && $verdict === null])>
+                            @php($before = $changed[$key] ?? null)
+                            {{-- A verdict on an earlier value doesn't carry over to a changed one. --}}
+                            @php($verdict = old("review.$key.verdict", $before ? null : ($row->review[$key]['verdict'] ?? null)))
+                            <tr @class(['border-b border-stone-100 align-top last:border-0', 'bg-red-50' => $errors->any() && $verdict === null, 'bg-amber-50' => $before && ! $errors->any()])>
                                 <th class="px-3 py-2 text-left font-medium text-stone-600">{{ str_replace('_', ' ', $key) }}</th>
-                                <td class="px-3 py-2 font-mono text-xs">{{ $value ?? '—' }}</td>
+                                <td class="px-3 py-2 font-mono text-xs">
+                                    {{ $value ?? '—' }}
+                                    @if ($before)
+                                        <div class="mt-1 font-sans text-amber-800">
+                                            Changed since review: was <span class="font-mono">{{ $before['reviewed_value'] ?? '—' }}</span> ({{ $before['verdict'] }})
+                                            @if (array_key_exists('value', $row->review[$key]) && \App\Models\DocumentExtraction::sameValue($value, $row->review[$key]['value']))
+                                                · matches your correction
+                                            @endif
+                                        </div>
+                                    @endif
+                                </td>
                                 <td class="px-3 py-2 text-xs">
                                     <span @class(['rounded px-1.5 py-0.5 font-medium',
                                         'bg-emerald-50 text-emerald-800' => $status === 'verified',
@@ -102,6 +121,10 @@
             @foreach ($row->ocr ?? [] as $side => $page)
                 <h3 class="mt-3 font-semibold">{{ $side }} · confidence {{ $page['confidence'] }} {{ ($page['orientation_retried'] ?? false) ? '· rotated' : '' }}</h3>
                 <pre class="mt-1 whitespace-pre-wrap rounded bg-stone-100 p-3">{{ $page['text'] }}</pre>
+                @foreach ($page['zones'] ?? [] as $zone => $read)
+                    <h4 class="mt-2 font-medium">{{ $side }} close-up: {{ str_replace('_', ' ', $zone) }} · confidence {{ $read['confidence'] }}</h4>
+                    <pre class="mt-1 whitespace-pre-wrap rounded bg-stone-100 p-3">{{ $read['text'] }}</pre>
+                @endforeach
             @endforeach
             <h3 class="mt-3 font-semibold">MRZ</h3>
             <pre class="mt-1 whitespace-pre-wrap rounded bg-stone-100 p-3">{{ json_encode($row->checks['_mrz'] ?? null, JSON_PRETTY_PRINT) }}</pre>

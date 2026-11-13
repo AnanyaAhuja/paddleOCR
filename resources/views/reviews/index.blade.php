@@ -41,7 +41,8 @@
                                 <span class="text-amber-700">{{ $statuses['flagged'] ?? 0 }} flagged</span>
                             @endif
                         </td>
-                        <td class="px-3 py-2 text-xs">{{ $row->reviewed_at ? 'Reviewed' : '—' }}</td>
+                        @php($changed = $row->reviewed_at ? count($row->changedSinceReview()) : 0)
+                        <td class="px-3 py-2 text-xs">{{ $row->reviewed_at ? 'Reviewed' : '—' }}@if ($changed) <span class="text-amber-700">· {{ $changed }} changed since</span>@endif</td>
                     </tr>
                 @empty
                     <tr><td colspan="4" class="px-3 py-6 text-center text-stone-500">Nothing here yet. Import with <code>make artisan cmd='documents:import'</code>.</td></tr>

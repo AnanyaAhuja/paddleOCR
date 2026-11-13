@@ -15,7 +15,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install -r requirements.txt
 
-COPY app.py .
+COPY app.py card.py ./
 
 # Download the OCR models at build time so the first request is fast
 # and the container works without internet access.

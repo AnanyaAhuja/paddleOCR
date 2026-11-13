@@ -41,10 +41,15 @@ class ProcessDocumentExtraction implements ShouldQueue
             'back' => $row->back_path ? $disk->path($row->back_path) : null,
         ]);
 
-        $ocr = $extractor->ocrPages($pages);
+        $masks = config('documents.masks_enabled') ? config("documents.types.{$row->document_type}.masks") : null;
+        [$ocr, $pages] = $this->keepCards($row, $extractor->ocrPages($pages, $masks), $pages);
+
         $result = $extractor->extract($row->document_type, $pages, 'ocr+image', null, $ocr);
         $fields = $result['fields'];
-        $ocrText = implode("\n", array_column($ocr, 'text'));
+
+        // Close-up reads first: the MRZ check takes the first MRZ it finds.
+        $zoneText = collect($ocr)->flatMap(fn ($page) => array_column($page['zones'] ?? [], 'text'))->implode("\n");
+        $ocrText = trim($zoneText."\n".implode("\n", array_column($ocr, 'text')));
 
         $ruleChecks = $row->document_type === 'it_id_card'
             ? $checks->run($fields, $ocrText)
@@ -65,11 +70,13 @@ class ProcessDocumentExtraction implements ShouldQueue
         $row->update([
             'status' => 'done',
             'fields' => $fields,
-            'ocr' => array_map(fn ($page) => [
+            'ocr' => array_map(fn ($page) => array_filter([
                 'text' => $page['text'],
                 'confidence' => $page['confidence'] ?? null,
                 'orientation_retried' => $page['orientation_retried'] ?? null,
-            ], $ocr),
+                'card' => $page['card'] ?? null,
+                'zones' => $page['zones'] ?? null,
+            ], fn ($value) => $value !== null), $ocr),
             'checks' => $ruleChecks['fields'] + ['_mrz' => $ruleChecks['mrz'], '_fiscal_code_valid' => $ruleChecks['fiscal_code_valid']],
             'judge' => $judged,
             'timings' => [
@@ -115,6 +122,36 @@ class ProcessDocumentExtraction implements ShouldQueue
         }
 
         return $result;
+    }
+
+    /**
+     * Save each card the OCR service cut out of a photo, and use it instead of
+     * the photo from here on: Qwen and JEV then see a flat, upright card with
+     * no background, which is also fewer pixels to read.
+     *
+     * @param  array<string, array<string, mixed>>  $ocr
+     * @param  array<string, string>  $pages  side => absolute image path
+     * @return array{array<string, array<string, mixed>>, array<string, string>}
+     */
+    private function keepCards(DocumentExtraction $row, array $ocr, array $pages): array
+    {
+        $disk = Storage::disk(config('documents.disk'));
+
+        foreach ($ocr as $side => $page) {
+            $image = $page['card']['image'] ?? null;
+            unset($ocr[$side]['card']['image']);
+
+            if (! ($page['card']['found'] ?? false) || ! $image) {
+                continue;
+            }
+
+            $path = "cards/{$row->id}/{$side}.jpg";
+            $disk->put($path, base64_decode($image));
+            $ocr[$side]['card']['path'] = $path;
+            $pages[$side] = $disk->path($path);
+        }
+
+        return [$ocr, $pages];
     }
 
     public function failed(?Throwable $e): void

@@ -113,7 +113,13 @@ make artisan cmd='documents:judge-benchmark'     # compare judges on the fixture
 
 Re-running the import queues only new and failed cases (`--reprocess` queues everything again). Real documents stay under `storage/app/private/`, which is git-ignored.
 
-On the review page, mark each field correct or wrong (with the right value); `/reviews/summary` then reports accuracy per field and how well the rules and JEV caught the wrong values. JEV re-reads the image for every question (~9 s each on an M-series GPU), which is why it only judges fields the rules could not verify.
+**Card and field masks.** For ID cards (`masks` in `config/documents.php`), the OCR service first cuts the card out of the photo (`docker/ocr/card.py`): it looks for a card-shaped outline (85.6 × 54 mm) in an edge map and in a "differs from the background" map, flattens it to 1400 × 883 px and turns it upright with PaddleOCR's orientation classifier. Areas of the upright card that hold small print (fiscal code, MRZ, document number) are then cut out, enlarged 2× and read again; Qwen gets those close-ups next to the full text, and the MRZ check reads them first. Qwen and JEV see the cut-out card instead of the photo, which is also far fewer pixels. Photos where no card is found (a hand-held card, two cards on one page) are read whole, as before. `DOCUMENT_MASKS=false` switches this off for comparison; the cut-out cards are stored under `storage/app/private/cards/` and shown on the review page.
+
+```bash
+make artisan cmd='documents:reprocess --reviewed'   # run reviewed documents again; /reviews/summary scores them against the reviews
+```
+
+On the review page, mark each field correct or wrong (with the right value); `/reviews/summary` then reports accuracy per field and how well the rules and JEV caught the wrong values. A review stores the value it judged and the right value, so it stays an answer key when documents are processed again: the summary scores the current values, and the "Changed since review" tab lists fields whose value changed, to check again. JEV re-reads the image for every question (~9 s each on an M-series GPU), which is why it only judges fields the rules could not verify.
 
 | Code | |
 |---|---|

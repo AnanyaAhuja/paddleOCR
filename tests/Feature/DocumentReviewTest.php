@@ -105,6 +105,46 @@ class DocumentReviewTest extends TestCase
         $this->assertSame('unchecked', $statuses['place_of_birth']);
     }
 
+    public function test_masks_keep_the_cut_out_card_and_read_its_zones(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('docs/b/1/back.jpg', $this->image());
+        $row = DocumentExtraction::create(['batch' => 'b', 'case_number' => '1', 'document_type' => 'it_id_card', 'front_path' => 'docs/b/1/back.jpg']);
+        $card = UploadedFile::fake()->image('card.jpg', 140, 88)->getContent();
+        $prompt = null;
+
+        Http::fake(function (Request $request) use ($card, &$prompt) {
+            if (str_contains($request->url(), 'ocr:8000')) {
+                return Http::response([
+                    'text' => 'CODICE FISCALE', 'lines' => [], 'confidence' => 0.97, 'orientation_retried' => false,
+                    'card' => ['found' => true, 'method' => 'edges', 'corners' => [[0, 0], [9, 0], [9, 5], [0, 5]], 'angle' => 180, 'image' => base64_encode($card)],
+                    'zones' => ['document_number' => ['text' => 'CA00000AA', 'confidence' => 0.99]],
+                ]);
+            }
+            if ($request['model'] === config('documents.judge.model')) {
+                return Http::response(['choices' => [['message' => ['content' => 'B'], 'logprobs' => null]]]);
+            }
+            $prompt = json_encode($request['messages']);
+
+            return Http::response(['choices' => [['message' => ['content' => json_encode(['document_number' => 'CA00000AA'])]]], 'usage' => []]);
+        });
+
+        (new ProcessDocumentExtraction($row->id))->handle(
+            app(DocumentExtractor::class), app(IdCardChecks::class), app(JevJudge::class),
+        );
+
+        $row->refresh();
+        $this->assertSame('done', $row->status);
+        $this->assertSame('cards/'.$row->id.'/front.jpg', $row->ocr['front']['card']['path']);
+        $this->assertArrayNotHasKey('image', $row->ocr['front']['card']);
+        Storage::disk('local')->assertExists($row->ocr['front']['card']['path']);
+        $this->assertStringContainsString('close-up: document number', $prompt);
+
+        // The review page shows the card, and the original stays available.
+        $this->get(route('reviews.image', [$row, 'front', 'card' => 1]))->assertOk();
+        $this->get(route('reviews.image', [$row, 'front']))->assertOk();
+    }
+
     public function test_review_saves_verdicts_moves_on_and_feeds_the_summary(): void
     {
         $fields = array_fill_keys(array_keys(config('documents.types.it_id_card.fields')), 'X');
@@ -128,6 +168,39 @@ class DocumentReviewTest extends TestCase
         $this->get(route('reviews.summary'))->assertOk()
             ->assertSee('documents reviewed')
             ->assertSee('JEV judge');
+    }
+
+    public function test_reviews_score_the_current_values_after_reprocessing(): void
+    {
+        $row = new DocumentExtraction(['fields' => ['surname' => 'ROSI', 'sex' => 'M', 'height_cm' => 170, 'address' => 'VIA X']]);
+        $row->review = [
+            'surname' => DocumentExtraction::reviewEntry('wrong', 'ROSI', 'Rossi'),
+            'sex' => DocumentExtraction::reviewEntry('correct', 'M', null),
+            'height_cm' => DocumentExtraction::reviewEntry('correct', 170, null),
+            'address' => DocumentExtraction::reviewEntry('wrong', 'VIA X', null),
+            '_note' => null,
+        ];
+
+        $this->assertSame(['surname' => true, 'sex' => false, 'height_cm' => false, 'address' => true], $row->reviewOutcomes());
+
+        // Processed again: the surname is fixed, sex got worse, the address
+        // changed but its right value was never typed in, so it is left out.
+        $row->fields = ['surname' => 'ROSSI', 'sex' => 'F', 'height_cm' => '170', 'address' => 'VIA Y'];
+        $this->assertSame(['surname' => false, 'sex' => true, 'height_cm' => false], $row->reviewOutcomes());
+        $this->assertSame(['surname', 'sex', 'address'], array_keys($row->changedSinceReview()));
+    }
+
+    public function test_changed_since_review_lists_documents_whose_values_changed(): void
+    {
+        $fields = array_fill_keys(array_keys(config('documents.types.it_id_card.fields')), 'X');
+        $review = array_map(fn ($value) => DocumentExtraction::reviewEntry('correct', $value, null), $fields);
+        $same = DocumentExtraction::create(['batch' => 'b', 'case_number' => '1', 'document_type' => 'it_id_card', 'front_path' => 'f', 'status' => 'done', 'fields' => $fields, 'review' => $review, 'reviewed_at' => now()]);
+        $changed = DocumentExtraction::create(['batch' => 'b', 'case_number' => '2', 'document_type' => 'it_id_card', 'front_path' => 'f', 'status' => 'done', 'fields' => ['surname' => 'Y'] + $fields, 'review' => $review, 'reviewed_at' => now()]);
+
+        $this->get(route('reviews.index', ['show' => 'changed']))->assertOk()->assertSee('b / 2')->assertDontSee('b / 1');
+        // The old verdict isn't pre-filled for the changed field.
+        $this->get(route('reviews.show', $changed))->assertOk()->assertSee('Changed since review');
+        $this->get(route('reviews.show', $same))->assertOk()->assertDontSee('Changed since review');
     }
 
     public function test_review_requires_a_verdict_for_every_field(): void

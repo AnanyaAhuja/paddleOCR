@@ -24,18 +24,20 @@ class DocumentExtractor
     ) {}
 
     /**
-     * OCR every page.
+     * OCR every page. With masks (config documents.types.*.masks), the card is
+     * cut out of each photo first and its zones are read again, enlarged.
      *
      * @param  array<string, string>  $pages  side => image path, e.g. ['front' => ..., 'back' => ...]
-     * @return array<string, array{text: string, lines: list<array<string, mixed>>, ms: int}>
+     * @param  array{card?: bool, zones?: array<string, list<array<string, mixed>>>}|null  $masks
+     * @return array<string, array{text: string, lines: list<array<string, mixed>>, ms: int, card?: array<string, mixed>, zones?: array<string, mixed>}>
      */
-    public function ocrPages(array $pages): array
+    public function ocrPages(array $pages, ?array $masks = null): array
     {
         $results = [];
 
         foreach ($pages as $side => $path) {
             $started = hrtime(true);
-            $result = $this->ocr->recognize($path);
+            $result = $this->ocr->recognize($path, (bool) ($masks['card'] ?? false), $masks['zones'][$side] ?? []);
             $results[$side] = $result + ['ms' => $this->msSince($started)];
         }
 
@@ -140,6 +142,15 @@ class DocumentExtractor
             foreach ($ocr as $side => $page) {
                 $lines[] = '['.strtoupper($side).']';
                 $lines[] = trim($page['text']) !== '' ? $page['text'] : '(no text found)';
+
+                // Field masks: small areas read again at a larger size. Prefer
+                // these for the fields they cover.
+                foreach ($page['zones'] ?? [] as $zone => $read) {
+                    if (trim($read['text'] ?? '') !== '') {
+                        $lines[] = '['.strtoupper($side).' close-up: '.str_replace('_', ' ', $zone).', more reliable for this field]';
+                        $lines[] = $read['text'];
+                    }
+                }
             }
         }
 

@@ -8,7 +8,8 @@ use Illuminate\Support\Collection;
 /**
  * How well the pipeline did, measured against manual reviews: accuracy per
  * field, and how well the automatic checks (rules and the JEV judge)
- * separated right values from wrong ones.
+ * separated right values from wrong ones. Uses each field's current value,
+ * so the numbers stay right after reviewed documents are processed again.
  */
 class ReviewStats
 {
@@ -28,12 +29,7 @@ class ReviewStats
         foreach ($reviewed as $row) {
             $statuses = $row->fieldStatuses();
 
-            foreach ($row->review ?? [] as $field => $verdict) {
-                if (! in_array($verdict['verdict'] ?? null, ['correct', 'wrong'], true)) {
-                    continue;
-                }
-
-                $wrong = $verdict['verdict'] === 'wrong';
+            foreach ($row->reviewOutcomes() as $field => $wrong) {
                 $perField[$field]['n'] = ($perField[$field]['n'] ?? 0) + 1;
                 $perField[$field]['correct'] = ($perField[$field]['correct'] ?? 0) + ($wrong ? 0 : 1);
 
