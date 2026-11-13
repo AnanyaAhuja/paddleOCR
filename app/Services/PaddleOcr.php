@@ -14,18 +14,21 @@ use Illuminate\Support\Facades\Http;
 class PaddleOcr
 {
     /**
-     * @return array{text: string, lines: list<array{text: string, confidence: float, box: list<int>}>}
+     * @param  bool  $redact  Also return a copy with personal data blacked out
+     * @param  list<string>  $keep  Printed labels the redacted copy may show
+     * @return array{text: string, lines: list<array{text: string, confidence: float, box: list<int>}>, redacted?: array{image: string, covered: array<string, int>}}
      *
      * @throws ConnectionException
      * @throws RequestException
      */
-    public function recognize(string $path): array
+    public function recognize(string $path, bool $redact = false, array $keep = []): array
     {
         $config = config('services.paddle_ocr');
+        $fields = $redact ? ['redact' => '1', 'keep' => json_encode(array_values($keep))] : [];
 
         return Http::timeout($config['timeout'])
             ->attach('file', file_get_contents($path), basename($path))
-            ->post(rtrim($config['url'], '/').'/ocr')
+            ->post(rtrim($config['url'], '/').'/ocr', $fields)
             ->throw()
             ->json();
     }

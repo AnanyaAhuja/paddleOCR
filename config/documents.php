@@ -110,9 +110,27 @@ return [
                 'fiscal_code' => ['type' => 'string', 'side' => 'back', 'description' => 'CODICE FISCALE, 16 characters, on the back'],
                 'address' => ['type' => 'string', 'side' => 'back', 'description' => 'INDIRIZZO DI RESIDENZA on the back, one line'],
             ],
+            // Privacy mask: printed labels that may stay visible. Every other
+            // line of text, faces and barcodes are blacked out.
+            'privacy' => [
+                'keep' => [
+                    'REPUBBLICA ITALIANA', "MINISTERO DELL'INTERNO", 'CARTA DI IDENTITÀ / IDENTITY CARD',
+                    'COMUNE DI / MUNICIPALITY', 'COGNOME / SURNAME', 'NOME / NAME',
+                    'LUOGO E DATA DI NASCITA', 'PLACE AND DATE OF BIRTH', 'SESSO', 'SEX', 'STATURA', 'HEIGHT',
+                    'CITTADINANZA', 'NATIONALITY', 'EMISSIONE / ISSUING', 'SCADENZA / EXPIRY',
+                    'FIRMA DEL TITOLARE', "HOLDER'S SIGNATURE",
+                    'COGNOME E NOME DEL PADRE E DELLA MADRE O DI CHI NE FA LE VECI', "FATHER AND MOTHER'S / TUTOR'S NAME",
+                    'CODICE FISCALE', 'FISCAL CODE', 'ESTREMI ATTO DI NASCITA', 'INDIRIZZO DI RESIDENZA / RESIDENCE',
+                ],
+            ],
         ],
 
     ],
+
+    // Store a privacy-masked copy of each page when it is processed
+    // (DOCUMENT_PRIVACY=false to skip). Privacy mode on the review pages
+    // shows only these copies.
+    'privacy_enabled' => (bool) env('DOCUMENT_PRIVACY', true),
 
     /*
     |--------------------------------------------------------------------------

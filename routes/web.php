@@ -15,6 +15,7 @@ Route::get('/documents/{id}', [DocumentController::class, 'show'])->name('docume
 // Manual verification of imported documents (php artisan documents:import).
 Route::get('/reviews', [ReviewController::class, 'index'])->name('reviews.index');
 Route::get('/reviews/summary', [ReviewController::class, 'summary'])->name('reviews.summary');
+Route::post('/reviews/privacy', [ReviewController::class, 'privacy'])->name('reviews.privacy');
 Route::get('/reviews/{extraction}', [ReviewController::class, 'show'])->name('reviews.show');
 Route::post('/reviews/{extraction}', [ReviewController::class, 'update'])->name('reviews.update');
 Route::get('/reviews/{extraction}/image/{side}', [ReviewController::class, 'image'])

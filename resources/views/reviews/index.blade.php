@@ -1,7 +1,10 @@
 <x-documents::layout title="Review documents">
     <div class="mb-6 flex flex-wrap items-baseline justify-between gap-3">
         <h1 class="text-2xl font-semibold">Review documents</h1>
-        <a href="{{ route('reviews.summary') }}" class="text-sm font-medium text-stone-700 underline">Summary</a>
+        <span class="text-sm">
+            <a href="{{ route('reviews.summary') }}" class="mr-3 font-medium text-stone-700 underline">Summary</a>
+            @include('reviews._privacy')
+        </span>
     </div>
 
     <p class="mb-4 text-sm text-stone-600">

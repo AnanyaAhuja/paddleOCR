@@ -24,18 +24,20 @@ class DocumentExtractor
     ) {}
 
     /**
-     * OCR every page.
+     * OCR every page; with $keepLabels, each page also comes back as a
+     * privacy-masked copy that shows only those labels (see docker/ocr/redact.py).
      *
      * @param  array<string, string>  $pages  side => image path, e.g. ['front' => ..., 'back' => ...]
-     * @return array<string, array{text: string, lines: list<array<string, mixed>>, ms: int}>
+     * @param  list<string>|null  $keepLabels  null: no masked copy
+     * @return array<string, array{text: string, lines: list<array<string, mixed>>, ms: int, redacted?: array<string, mixed>}>
      */
-    public function ocrPages(array $pages): array
+    public function ocrPages(array $pages, ?array $keepLabels = null): array
     {
         $results = [];
 
         foreach ($pages as $side => $path) {
             $started = hrtime(true);
-            $result = $this->ocr->recognize($path);
+            $result = $this->ocr->recognize($path, $keepLabels !== null, $keepLabels ?? []);
             $results[$side] = $result + ['ms' => $this->msSince($started)];
         }
 

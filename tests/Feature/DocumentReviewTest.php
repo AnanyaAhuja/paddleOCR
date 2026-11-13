@@ -148,4 +148,86 @@ class DocumentReviewTest extends TestCase
         $this->get(route('reviews.image', [$row, 'front']))->assertOk();
         $this->get(route('reviews.image', [$row, 'back']))->assertNotFound();
     }
+
+    /** OCR fake that returns a masked copy, like docker/ocr with redact=1. */
+    private function fakeOcrWithMaskedCopy(): void
+    {
+        $masked = base64_encode($this->image());
+
+        Http::fake(function (Request $request) use ($masked) {
+            if (str_contains($request->url(), 'ocr:8000')) {
+                return Http::response(['text' => 'COGNOME / SURNAME', 'lines' => [], 'confidence' => 0.97, 'orientation_retried' => false,
+                    'redacted' => ['image' => $masked, 'covered' => ['text' => 12, 'kept_labels' => 5, 'faces' => 1, 'barcodes' => 0]]]);
+            }
+            if ($request['model'] === config('documents.judge.model')) {
+                return Http::response(['choices' => [['message' => ['content' => 'B'], 'logprobs' => null]]]);
+            }
+
+            return Http::response(['choices' => [['message' => ['content' => json_encode(['surname' => 'ROSSI'])]]], 'usage' => []]);
+        });
+    }
+
+    public function test_processing_stores_a_privacy_masked_copy(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('docs/b/1/front.jpg', $this->image());
+        $row = DocumentExtraction::create(['batch' => 'b', 'case_number' => '1', 'document_type' => 'it_id_card', 'front_path' => 'docs/b/1/front.jpg']);
+        $this->fakeOcrWithMaskedCopy();
+
+        (new ProcessDocumentExtraction($row->id))->handle(
+            app(DocumentExtractor::class), app(IdCardChecks::class), app(JevJudge::class),
+        );
+
+        $redacted = $row->refresh()->ocr['front']['redacted'];
+        $this->assertSame("redacted/{$row->id}/front.jpg", $redacted['path']);
+        $this->assertSame(1, $redacted['covered']['faces']);
+        $this->assertArrayNotHasKey('image', $redacted);
+        Storage::disk('local')->assertExists($redacted['path']);
+
+        // The OCR service was asked for a masked copy that may show the card's labels.
+        Http::assertSent(fn (Request $request) => str_contains($request->url(), 'ocr:8000')
+            && in_array('COGNOME / SURNAME', json_decode(collect($request->data())->firstWhere('name', 'keep')['contents'] ?? '[]', true), true));
+    }
+
+    public function test_redact_command_masks_documents_processed_before(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('docs/f.jpg', $this->image());
+        $row = DocumentExtraction::create(['batch' => 'b', 'case_number' => '1', 'document_type' => 'it_id_card', 'front_path' => 'docs/f.jpg', 'status' => 'done',
+            'fields' => ['surname' => 'ROSSI'], 'ocr' => ['front' => ['text' => 'old text', 'confidence' => 0.9]]]);
+        $this->fakeOcrWithMaskedCopy();
+
+        $this->artisan('documents:redact', ['--all' => true])->assertSuccessful();
+
+        $row->refresh();
+        $this->assertSame('old text', $row->ocr['front']['text']);
+        $this->assertSame('ROSSI', $row->fields['surname']);
+        Storage::disk('local')->assertExists($row->ocr['front']['redacted']['path']);
+    }
+
+    public function test_privacy_mode_hides_values_and_serves_only_masked_copies(): void
+    {
+        Storage::fake('local');
+        Storage::disk('local')->put('docs/f.jpg', $this->image());
+        Storage::disk('local')->put('redacted/1/front.jpg', $this->image());
+        $fields = array_fill_keys(array_keys(config('documents.types.it_id_card.fields')), null);
+        $row = DocumentExtraction::create(['batch' => 'b', 'case_number' => '1', 'document_type' => 'it_id_card', 'front_path' => 'docs/f.jpg', 'status' => 'done',
+            'fields' => ['surname' => 'ROSSI'] + $fields, 'ocr' => ['front' => ['text' => 'ROSSI MARIO', 'confidence' => 0.9, 'redacted' => ['path' => 'redacted/1/front.jpg']]]]);
+
+        $this->get(route('reviews.show', $row))->assertOk()->assertSee('ROSSI')->assertSee('Privacy mode: off');
+
+        $this->post(route('reviews.privacy'))->assertRedirect();
+
+        $this->get(route('reviews.show', $row))->assertOk()
+            ->assertSee('Privacy mode: on')
+            ->assertDontSee('ROSSI')
+            ->assertSee('R••••')
+            ->assertDontSee('Save and next');
+        $this->get(route('reviews.image', [$row, 'front']))->assertForbidden();
+        $this->get(route('reviews.image', [$row, 'front', 'redacted' => 1]))->assertOk();
+        $this->post(route('reviews.update', $row), ['review' => ['surname' => ['verdict' => 'correct']]])->assertForbidden();
+
+        $this->post(route('reviews.privacy'));
+        $this->get(route('reviews.image', [$row, 'front']))->assertOk();
+    }
 }

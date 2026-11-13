@@ -4,7 +4,8 @@
         <span class="text-sm">
             <span class="mr-3 rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">{{ $progress['reviewed'] }} of {{ $progress['done'] }} reviewed</span>
             <a href="{{ route('reviews.summary') }}" class="mr-3 underline">Summary</a>
-            <a href="{{ route('reviews.index') }}" class="underline">All documents</a>
+            <a href="{{ route('reviews.index') }}" class="mr-3 underline">All documents</a>
+            @include('reviews._privacy')
         </span>
     </div>
 
@@ -14,15 +15,28 @@
 
     <section class="mb-6 grid gap-3 sm:grid-cols-2">
         @foreach (array_filter(['front' => $row->front_path, 'back' => $row->back_path]) as $side => $path)
+            @php($hasMasked = isset($row->ocr[$side]['redacted']['path']))
+            @php($masked = route('reviews.image', [$row, $side, 'redacted' => 1]))
+            @php($src = $privacy ? ($hasMasked ? $masked : null) : route('reviews.image', [$row, $side]))
             <figure class="rounded-xl border border-stone-200 bg-white p-2">
-                <div class="mb-1 flex items-center justify-between text-xs text-stone-500">
-                    <span>{{ ucfirst($side) }}</span>
+                <div class="mb-1 flex items-center justify-between gap-2 text-xs text-stone-500">
+                    <span>
+                        {{ ucfirst($side) }}{{ $privacy ? ' · masked copy' : '' }}
+                        @if (! $privacy && $hasMasked)
+                            · <a href="{{ $masked }}" target="_blank" class="underline">masked copy</a>
+                        @endif
+                    </span>
                     <button type="button" class="rounded border border-stone-300 px-2 py-0.5" onclick="rotate(this)">Rotate</button>
                 </div>
-                <a href="{{ route('reviews.image', [$row, $side]) }}" target="_blank" class="block overflow-hidden">
-                    <img src="{{ route('reviews.image', [$row, $side]) }}" alt="{{ $side }}" data-angle="0"
-                         class="mx-auto max-h-[28rem] w-auto transition-transform">
-                </a>
+                @if ($src)
+                    <a href="{{ $src }}" target="_blank" class="block overflow-hidden">
+                        <img src="{{ $src }}" alt="{{ $side }}" data-angle="0"
+                             class="mx-auto max-h-[28rem] w-auto transition-transform">
+                    </a>
+                @else
+                    {{-- Never fall back to the original in privacy mode. --}}
+                    <p class="px-3 py-10 text-center text-xs text-stone-500">No masked copy yet. Make one with <code>make artisan cmd='documents:redact {{ $row->id }}'</code>.</p>
+                @endif
             </figure>
         @endforeach
     </section>
@@ -42,7 +56,9 @@
                     <span class="font-medium text-sky-700">confident</span> = JEV ≥ {{ number_format($threshold * 100) }}% ·
                     <span class="font-medium text-amber-700">flagged</span> = a check disagrees or JEV doubts it
                 </span>
-                <button type="button" onclick="markRemainingCorrect()" class="rounded border border-stone-300 bg-white px-2 py-1">Mark unanswered as correct</button>
+                @unless ($privacy)
+                    <button type="button" onclick="markRemainingCorrect()" class="rounded border border-stone-300 bg-white px-2 py-1">Mark unanswered as correct</button>
+                @endunless
             </div>
 
             <div class="overflow-x-auto rounded-xl border border-stone-200 bg-white">
@@ -59,7 +75,7 @@
                             @php($verdict = old("review.$key.verdict", $row->review[$key]['verdict'] ?? null))
                             <tr @class(['border-b border-stone-100 align-top last:border-0', 'bg-red-50' => $errors->any() && $verdict === null])>
                                 <th class="px-3 py-2 text-left font-medium text-stone-600">{{ str_replace('_', ' ', $key) }}</th>
-                                <td class="px-3 py-2 font-mono text-xs">{{ $value ?? '—' }}</td>
+                                <td class="px-3 py-2 font-mono text-xs">{{ $privacy ? $masks->maskValue($value) : ($value ?? '—') }}</td>
                                 <td class="px-3 py-2 text-xs">
                                     <span @class(['rounded px-1.5 py-0.5 font-medium',
                                         'bg-emerald-50 text-emerald-800' => $status === 'verified',
@@ -74,11 +90,15 @@
                                     @endif
                                 </td>
                                 <td class="px-3 py-2 text-xs">
-                                    <label class="mr-2 whitespace-nowrap"><input type="radio" name="review[{{ $key }}][verdict]" value="correct" @checked($verdict === 'correct') required> Correct</label>
-                                    <label class="whitespace-nowrap"><input type="radio" name="review[{{ $key }}][verdict]" value="wrong" @checked($verdict === 'wrong')> Wrong</label>
-                                    <input type="text" name="review[{{ $key }}][corrected]" placeholder="Correct value (if wrong)"
-                                           value="{{ old("review.$key.corrected", $row->review[$key]['corrected'] ?? '') }}"
-                                           class="mt-1 block w-full rounded border border-stone-300 px-2 py-1">
+                                    @if ($privacy)
+                                        {{ $verdict ?? '—' }}
+                                    @else
+                                        <label class="mr-2 whitespace-nowrap"><input type="radio" name="review[{{ $key }}][verdict]" value="correct" @checked($verdict === 'correct') required> Correct</label>
+                                        <label class="whitespace-nowrap"><input type="radio" name="review[{{ $key }}][verdict]" value="wrong" @checked($verdict === 'wrong')> Wrong</label>
+                                        <input type="text" name="review[{{ $key }}][corrected]" placeholder="Correct value (if wrong)"
+                                               value="{{ old("review.$key.corrected", $row->review[$key]['corrected'] ?? '') }}"
+                                               class="mt-1 block w-full rounded border border-stone-300 px-2 py-1">
+                                    @endif
                                 </td>
                             </tr>
                         @endforeach
@@ -86,17 +106,21 @@
                 </table>
             </div>
 
-            <label class="block text-sm">
-                <span class="mb-1 block font-medium">Note (optional)</span>
-                <textarea name="note" rows="2" class="w-full rounded-md border border-stone-300 px-3 py-2">{{ old('note', $row->review['_note'] ?? '') }}</textarea>
-            </label>
+            @unless ($privacy)
+                <label class="block text-sm">
+                    <span class="mb-1 block font-medium">Note (optional)</span>
+                    <textarea name="note" rows="2" class="w-full rounded-md border border-stone-300 px-3 py-2">{{ old('note', $row->review['_note'] ?? '') }}</textarea>
+                </label>
 
-            <div class="flex flex-wrap items-center gap-3">
-                <button type="submit" class="rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700">Save and next</button>
-                <span class="text-xs text-stone-500">Every field needs Correct or Wrong. Tip: mark the wrong ones, then “Mark unanswered as correct”.</span>
-            </div>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button type="submit" class="rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white hover:bg-stone-700">Save and next</button>
+                    <span class="text-xs text-stone-500">Every field needs Correct or Wrong. Tip: mark the wrong ones, then “Mark unanswered as correct”.</span>
+                </div>
+            @endunless
         </form>
 
+        {{-- The OCR text and MRZ are personal data too. --}}
+        @unless ($privacy)
         <details class="mt-8 text-xs text-stone-600">
             <summary class="cursor-pointer font-medium">OCR text, MRZ and timings</summary>
             @foreach ($row->ocr ?? [] as $side => $page)
@@ -107,6 +131,7 @@
             <pre class="mt-1 whitespace-pre-wrap rounded bg-stone-100 p-3">{{ json_encode($row->checks['_mrz'] ?? null, JSON_PRETTY_PRINT) }}</pre>
             <p class="mt-3">OCR {{ round(($row->timings['ocr_ms'] ?? 0) / 1000, 1) }}s · Qwen {{ round(($row->timings['vlm_ms'] ?? 0) / 1000, 1) }}s · JEV {{ round(($row->timings['judge_ms'] ?? 0) / 1000, 1) }}s · {{ $row->model }} {{ isset($row->judge['error']) ? '· judge error: '.$row->judge['error'] : '' }}</p>
         </details>
+        @endunless
     @endif
 
     <script>

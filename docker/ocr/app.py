@@ -2,15 +2,24 @@
 
 Laravel (PHP) can't call the Python SDK directly, so this service exposes it
 over HTTP: POST an image to /ocr and get the recognised text back as JSON.
+
+With redact=1 it also returns a privacy-masked copy of the image (see
+redact.py): all text except the labels listed in `keep`, faces and barcodes
+blacked out, reusing the text boxes OCR just found.
 """
 
+import base64
+import json
 import os
 import tempfile
 import threading
 from pathlib import Path
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import cv2
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from paddleocr import PaddleOCR
+
+from redact import redact
 
 ALLOWED_SUFFIXES = {".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff"}
 MAX_BYTES = 10 * 1024 * 1024  # 10 MB
@@ -49,14 +58,18 @@ ocr_lock = threading.Lock()  # the predictor is not safe to share across threads
 
 
 def read(path: str, correct_orientation: bool) -> dict:
-    lines = []
+    lines, polys, turned = [], [], None
     for page in ocr.predict(path, use_doc_orientation_classify=correct_orientation):
-        for text, score, box in zip(page["rec_texts"], page["rec_scores"], page["rec_boxes"]):
+        preprocessed = page.get("doc_preprocessor_res")
+        if correct_orientation and preprocessed:
+            turned = preprocessed["output_img"]  # the boxes refer to this image
+        for text, score, box, poly in zip(page["rec_texts"], page["rec_scores"], page["rec_boxes"], page["rec_polys"]):
             lines.append({
                 "text": text,
                 "confidence": round(float(score), 4),
                 "box": [int(v) for v in box],  # [x_min, y_min, x_max, y_max]
             })
+            polys.append({"text": text, "poly": [[int(x), int(y)] for x, y in poly]})
 
     # Short fragments (1-2 characters) are noisy either way, so leave them out.
     words = [line["confidence"] for line in lines if len(line["text"].strip()) >= 3]
@@ -64,7 +77,21 @@ def read(path: str, correct_orientation: bool) -> dict:
         "text": "\n".join(line["text"] for line in lines),
         "lines": lines,
         "confidence": round(sum(words) / len(words), 4) if words else 0.0,
+        # For redaction only, not returned.
+        "_polys": polys,
+        "_turned": turned,
     }
+
+
+def parse_keep(raw: str) -> list[str]:
+    if not raw:
+        return []
+    try:
+        keep = json.loads(raw)
+        assert isinstance(keep, list) and all(isinstance(label, str) for label in keep)
+        return keep
+    except (ValueError, AssertionError):
+        raise HTTPException(status_code=422, detail="keep must be a JSON list of label strings.")
 
 
 @app.get("/health")
@@ -73,7 +100,8 @@ def health():
 
 
 @app.post("/ocr")
-def run_ocr(file: UploadFile = File(...)):
+def run_ocr(file: UploadFile = File(...), redact_image: bool = Form(False, alias="redact"), keep: str = Form("")):
+    keep_labels = parse_keep(keep)
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_SUFFIXES:
         raise HTTPException(status_code=422, detail=f"Unsupported file type '{suffix}'.")
@@ -96,4 +124,11 @@ def run_ocr(file: UploadFile = File(...)):
                     result = retry
                 result["orientation_retried"] = True
 
+            if redact_image:
+                image = result["_turned"] if result["_turned"] is not None else cv2.imread(tmp.name)
+                masked, counts = redact(image, result["_polys"], keep_labels)
+                ok, jpeg = cv2.imencode(".jpg", masked, [cv2.IMWRITE_JPEG_QUALITY, 85])
+                result["redacted"] = {"image": base64.b64encode(jpeg.tobytes()).decode() if ok else "", "covered": counts}
+
+    del result["_polys"], result["_turned"]
     return result

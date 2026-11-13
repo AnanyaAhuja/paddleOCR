@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Documents\PrivacyMasks;
 use App\Documents\ReviewStats;
 use App\Models\DocumentExtraction;
 use Illuminate\Http\RedirectResponse;
@@ -62,10 +63,12 @@ class ReviewController extends Controller
         ]);
     }
 
-    public function show(DocumentExtraction $extraction): View
+    public function show(DocumentExtraction $extraction, PrivacyMasks $privacy): View
     {
         return view('reviews.show', [
             'row' => $extraction,
+            'privacy' => $privacy->enabledInSession(),
+            'masks' => $privacy,
             'definition' => config("documents.types.{$extraction->document_type}"),
             'statuses' => $extraction->fieldStatuses(),
             'threshold' => (float) config('documents.judge.threshold'),
@@ -76,8 +79,11 @@ class ReviewController extends Controller
         ]);
     }
 
-    public function update(Request $request, DocumentExtraction $extraction): RedirectResponse
+    public function update(Request $request, DocumentExtraction $extraction, PrivacyMasks $privacy): RedirectResponse
     {
+        // Values are hidden in privacy mode, so a verdict would be a guess.
+        abort_if($privacy->enabledInSession(), 403, 'Turn privacy mode off to review.');
+
         $fields = array_keys(config("documents.types.{$extraction->document_type}.fields"));
 
         $validated = $request->validate([
@@ -116,19 +122,37 @@ class ReviewController extends Controller
             : redirect()->route('reviews.summary')->with('saved', 'All processed documents are reviewed.');
     }
 
-    public function image(DocumentExtraction $extraction, string $side): BinaryFileResponse
+    /**
+     * The original photo, or with ?redacted=1 its privacy-masked copy. In
+     * privacy mode only masked copies are served, never the original. The two
+     * have different URLs, so a cached original is never shown in its place.
+     */
+    public function image(Request $request, DocumentExtraction $extraction, string $side, PrivacyMasks $privacy): BinaryFileResponse
     {
-        $path = match ($side) {
-            'front' => $extraction->front_path,
-            'back' => $extraction->back_path,
-            default => null,
-        };
+        $redacted = $request->boolean('redacted');
+        abort_if($privacy->enabledInSession() && ! $redacted, 403, 'Privacy mode shows masked copies only.');
+
+        $path = $redacted
+            ? ($extraction->ocr[$side]['redacted']['path'] ?? null)
+            : match ($side) {
+                'front' => $extraction->front_path,
+                'back' => $extraction->back_path,
+                default => null,
+            };
 
         abort_if($path === null, 404);
 
         return response()->file(Storage::disk(config('documents.disk'))->path($path), [
             'Cache-Control' => 'private, max-age=3600',
         ]);
+    }
+
+    /** Switch privacy mode for this browser session. */
+    public function privacy(Request $request, PrivacyMasks $privacy): RedirectResponse
+    {
+        $request->session()->put(PrivacyMasks::SESSION_KEY, ! $privacy->enabledInSession());
+
+        return back();
     }
 
     public function summary(ReviewStats $stats): View

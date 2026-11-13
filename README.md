@@ -115,6 +115,14 @@ Re-running the import queues only new and failed cases (`--reprocess` queues eve
 
 On the review page, mark each field correct or wrong (with the right value); `/reviews/summary` then reports accuracy per field and how well the rules and JEV caught the wrong values. JEV re-reads the image for every question (~9 s each on an M-series GPU), which is why it only judges fields the rules could not verify.
 
+**Privacy masks.** Each page is also stored as a masked copy (`storage/app/private/redacted/`), made by the OCR service in the same pass (`docker/ocr/redact.py`). It is default deny: every line of text OCR found is blacked out unless it reads as one of the printed labels listed under `privacy.keep` in `config/documents.php` ("COGNOME / SURNAME"), so a misread label is hidden too. Faces (OpenCV's YuNet model, also the small ghost photo on the back) and barcodes are blacked out as well. The **Privacy mode** switch on the review pages then shows only masked copies, never the originals (they get a 403), masks field values (`R••••`), hides the OCR text and disables reviewing, which makes the pages safe to screen-share. Documents processed before this get their masked copies with:
+
+```bash
+make artisan cmd='documents:redact --all'   # OCR only; fields, checks and reviews stay as they are
+```
+
+`DOCUMENT_PRIVACY=false` skips making masked copies. Masking relies on OCR finding the text: handwriting it misses (a signature) and text on photos it can't read may stay visible, so check a masked copy before sharing it outside the team.
+
 | Code | |
 |---|---|
 | `app/Console/Commands/ImportDocuments.php`, `app/Jobs/ProcessDocumentExtraction.php` | Import and the per-card pipeline |

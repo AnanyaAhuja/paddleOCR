@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Documents\Checks\IdCardChecks;
 use App\Documents\DocumentExtractor;
+use App\Documents\PrivacyMasks;
 use App\Models\DocumentExtraction;
 use App\Services\JevJudge;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -41,7 +42,8 @@ class ProcessDocumentExtraction implements ShouldQueue
             'back' => $row->back_path ? $disk->path($row->back_path) : null,
         ]);
 
-        $ocr = $extractor->ocrPages($pages);
+        $privacy = app(PrivacyMasks::class);
+        $ocr = $privacy->store($row, $extractor->ocrPages($pages, $privacy->keepLabels($row->document_type)));
         $result = $extractor->extract($row->document_type, $pages, 'ocr+image', null, $ocr);
         $fields = $result['fields'];
         $ocrText = implode("\n", array_column($ocr, 'text'));
@@ -65,11 +67,12 @@ class ProcessDocumentExtraction implements ShouldQueue
         $row->update([
             'status' => 'done',
             'fields' => $fields,
-            'ocr' => array_map(fn ($page) => [
+            'ocr' => array_map(fn ($page) => array_filter([
                 'text' => $page['text'],
                 'confidence' => $page['confidence'] ?? null,
                 'orientation_retried' => $page['orientation_retried'] ?? null,
-            ], $ocr),
+                'redacted' => $page['redacted'] ?? null,
+            ], fn ($value) => $value !== null), $ocr),
             'checks' => $ruleChecks['fields'] + ['_mrz' => $ruleChecks['mrz'], '_fiscal_code_valid' => $ruleChecks['fiscal_code_valid']],
             'judge' => $judged,
             'timings' => [
