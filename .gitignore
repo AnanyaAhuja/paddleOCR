@@ -35,3 +35,6 @@ Thumbs.db
 *.p12
 /storage/app/private/
 /storage/app/benchmarks/
+
+# JEV model downloads (make jev)
+/.jev/

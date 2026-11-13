@@ -33,7 +33,7 @@ class QwenVl
         foreach ($imagePaths as $path) {
             $content[] = [
                 'type' => 'image_url',
-                'image_url' => ['url' => $this->dataUrl($path, $config['max_image_side'])],
+                'image_url' => ['url' => ImageEncoder::dataUrl($path, $config['max_image_side'])],
             ];
         }
 
@@ -90,32 +90,5 @@ class QwenVl
         }
 
         return $data;
-    }
-
-    /**
-     * Base64 data URL, downscaled so the longest side is at most $maxSide.
-     */
-    private function dataUrl(string $path, int $maxSide): string
-    {
-        $bytes = file_get_contents($path);
-        $image = @imagecreatefromstring($bytes);
-
-        if ($image === false) {
-            throw new RuntimeException("Could not read image: {$path}");
-        }
-
-        $width = imagesx($image);
-        $height = imagesy($image);
-        $scale = $maxSide / max($width, $height);
-
-        if ($scale < 1) {
-            $image = imagescale($image, (int) round($width * $scale), (int) round($height * $scale), IMG_BICUBIC);
-        }
-
-        ob_start();
-        imagejpeg($image, null, 90);
-        $jpeg = ob_get_clean();
-
-        return 'data:image/jpeg;base64,'.base64_encode($jpeg);
     }
 }

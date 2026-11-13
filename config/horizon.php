@@ -221,7 +221,8 @@ return [
             'maxJobs' => 0,
             'memory' => 256,
             'tries' => 1,
-            'timeout' => 300,
+            // Must exceed the longest job (ProcessDocumentExtraction: 900s).
+            'timeout' => 900,
             'nice' => 0,
         ],
     ],

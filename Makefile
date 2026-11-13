@@ -1,7 +1,7 @@
 .PHONY: help setup bootstrap ssl up down restart logs ps build rebuild destroy prune \
         shell shell-worker shell-scheduler shell-mysql shell-redis shell-proxy \
         composer artisan npm init migrate seed fresh test pint reload \
-        wait-app check-hosts check-cert hosts hooks urls rename
+        wait-app check-hosts check-cert hosts hooks urls rename jev
 
 DC          := docker compose
 APP_SERVICE := app
@@ -54,6 +54,7 @@ help:
 	@echo "  make reload                       - Gracefully reload Octane workers"
 	@echo "  make wait-app                     - Block until the app finishes first boot and serves /up"
 	@echo "  make urls                         - Print service URLs"
+	@echo "  make jev                          - Download the JEV judge model into Docker Model Runner (JEV_QUANT=Q8_0 for 8-bit)"
 	@echo "  make rename name=acme             - Rename the project everywhere (run once, before bootstrap)"
 	@echo ""
 	@echo "Note: the app installs its own dependencies at container start, so artisan/composer"
@@ -301,3 +302,18 @@ rename:
 		if [ -f "$$f" ]; then mv "$$f" "$$(echo "$$f" | sed "s/starter/$(name)/")"; fi; \
 	done; \
 	echo "Renamed to $(name) ($$title). Next: make bootstrap"
+
+# JEV (sidman007/jev-vlm-4b-lite-gguf) is the "System One" judge that scores
+# each extracted field. Docker Model Runner's Hugging Face pull skips its vision
+# projector, so download both files and package them together. Needs ~3.4 GB
+# (Q4_K_M) or ~5.2 GB (Q8_0) of downloads; the files are deleted afterwards.
+JEV_QUANT ?= Q4_K_M
+JEV_BASE  := https://huggingface.co/sidman007/jev-vlm-4b-lite-gguf/resolve/main
+jev:
+	@mkdir -p .jev
+	@echo "Downloading jev-vlm-4b-lite-$(JEV_QUANT).gguf and its vision projector..."
+	@curl -fL --retry 3 -o .jev/model.gguf "$(JEV_BASE)/jev-vlm-4b-lite-$(JEV_QUANT).gguf"
+	@curl -fL --retry 3 -o .jev/mmproj.gguf "$(JEV_BASE)/mmproj-jev-vlm-4b-lite-f16.gguf"
+	@docker model package --gguf .jev/model.gguf --mmproj .jev/mmproj.gguf --context-size 16384 local/jev-vlm-4b-lite:$(JEV_QUANT)
+	@rm -rf .jev
+	@echo "Ready: local/jev-vlm-4b-lite:$(JEV_QUANT) (set JEV_MODEL in .env to use another quant)"

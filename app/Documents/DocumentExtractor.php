@@ -105,6 +105,10 @@ class DocumentExtractor
     {
         $lines = ["Document type: {$definition['label']}."];
 
+        if (isset($definition['hint'])) {
+            $lines[] = $definition['hint'];
+        }
+
         if ($withImages) {
             $order = collect($sides)->values()->map(fn ($side, $i) => ($i + 1).') '.strtoupper($side))->implode(', ');
             $lines[] = count($sides) > 1

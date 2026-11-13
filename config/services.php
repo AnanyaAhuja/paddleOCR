@@ -31,7 +31,7 @@ return [
     // PaddleOCR HTTP wrapper (docker/ocr), reached over the compose network.
     'paddle_ocr' => [
         'url' => env('PADDLE_OCR_URL', 'http://ocr:8000'),
-        'timeout' => (int) env('PADDLE_OCR_TIMEOUT', 120),
+        'timeout' => (int) env('PADDLE_OCR_TIMEOUT', 300),
     ],
 
     // Qwen VLM on Docker Model Runner (OpenAI-compatible). Compose injects

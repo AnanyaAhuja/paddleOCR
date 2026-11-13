@@ -86,6 +86,55 @@ return [
             ],
         ],
 
+        // Italian electronic identity card (CIE 3.0). Labels are printed in
+        // Italian and English; the MRZ on the back is checked separately.
+        'it_id_card' => [
+            'label' => 'Italian identity card (CIE)',
+            'hint' => 'Italian labels: COGNOME = surname, NOME = given names, LUOGO E DATA DI NASCITA = place and date of birth, '
+                .'SESSO = sex, STATURA = height, CITTADINANZA = nationality, EMISSIONE = issue date, SCADENZA = expiry date, '
+                .'COMUNE DI = issuing municipality, CODICE FISCALE = fiscal code, INDIRIZZO DI RESIDENZA = address. '
+                .'The document number is printed in the top-right corner of the front (e.g. CA00000AA). '
+                .'Front and back may be rotated or on one scanned page.',
+            'fields' => [
+                'surname' => ['type' => 'string', 'description' => 'COGNOME / SURNAME'],
+                'given_names' => ['type' => 'string', 'description' => 'NOME / NAME'],
+                'date_of_birth' => ['type' => 'date', 'description' => 'Date of birth'],
+                'place_of_birth' => ['type' => 'string', 'description' => 'Place of birth as printed, e.g. ROMA (RM)'],
+                'sex' => ['type' => 'string', 'description' => 'SESSO: M or F'],
+                'height_cm' => ['type' => 'number', 'description' => 'STATURA in centimetres'],
+                'nationality' => ['type' => 'string', 'description' => 'CITTADINANZA as printed, e.g. ITA'],
+                'document_number' => ['type' => 'string', 'description' => 'Card number at the top right of the front, e.g. CA00000AA'],
+                'issue_date' => ['type' => 'date', 'description' => 'EMISSIONE / date of issue'],
+                'expiry_date' => ['type' => 'date', 'description' => 'SCADENZA / date of expiry'],
+                'issuing_municipality' => ['type' => 'string', 'description' => 'COMUNE DI / municipality that issued the card'],
+                'fiscal_code' => ['type' => 'string', 'side' => 'back', 'description' => 'CODICE FISCALE, 16 characters, on the back'],
+                'address' => ['type' => 'string', 'side' => 'back', 'description' => 'INDIRIZZO DI RESIDENZA on the back, one line'],
+            ],
+        ],
+
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Judge (JEV)
+    |--------------------------------------------------------------------------
+    |
+    | A "System One" model that answers "is this value shown on the card?"
+    | with a calibrated probability. Below the threshold a field is flagged
+    | for manual review. Tune it on your reviews (/reviews/summary): on 23
+    | reviewed Italian ID cards, 0.60 caught 64% of wrong values and 0.75
+    | caught 82%, at the cost of more flagged fields.
+    |
+    */
+    'judge' => [
+        'enabled' => (bool) env('JEV_ENABLED', true),
+        // Served by Docker Model Runner on the Mac GPU, next to Qwen. The model
+        // is packaged with its vision projector: see `make jev`.
+        'url' => env('JEV_URL', env('QWEN_VL_URL', 'http://model-runner.docker.internal/engines/v1/')),
+        'model' => env('JEV_MODEL', 'local/jev-vlm-4b-lite:Q4_K_M'),
+        'timeout' => (int) env('JEV_TIMEOUT', 300),
+        'threshold' => (float) env('JEV_THRESHOLD', 0.60),
+        'max_image_side' => (int) env('JEV_MAX_IMAGE_SIDE', 1024),
     ],
 
     // Disk and folder for uploaded pages; results are kept in the cache.

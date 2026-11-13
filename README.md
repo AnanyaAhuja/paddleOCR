@@ -94,6 +94,34 @@ Qwen's output is constrained by a JSON schema built from `config/documents.php`.
 
 On Apple Silicon the `ocr` container runs under x86 emulation (PaddlePaddle has no ARM Linux build), about 10-25s per page. It uses PaddlePaddle 3.2.2 with oneDNN on; 3.3.x crashes with oneDNN and is ~4.5x slower without it.
 
+## ID cards: checks, JEV judge and manual review
+
+Batches of ID cards are stored in MySQL (`document_extractions`: extracted fields, image paths, OCR text, check results, judge scores, timings, review) and verified by hand at https://starter.local/reviews.
+
+Per card, the `ProcessDocumentExtraction` job runs:
+
+1. **PaddleOCR + Qwen**, as above (type `it_id_card` in `config/documents.php`).
+2. **Rule checks** (`app/Documents/Checks/`): the MRZ check digits (ICAO 9303) and the fiscal code check letter. A field that matches a valid MRZ or fiscal code is *verified*.
+3. **JEV judge** (`app/Services/JevJudge.php`, [sidman007/jev-vlm-4b-lite-gguf](https://huggingface.co/sidman007/jev-vlm-4b-lite-gguf)) for the fields no rule verified: "is this value on the card?" → P(true). At or above `JEV_THRESHOLD` (0.60) a field is *confident*, below it *flagged*.
+
+```bash
+make jev                                         # once: package JEV with its vision projector for Model Runner
+make migrate
+make artisan cmd='documents:import real-docs'    # <batch>/<case>/<name> fronte|retro.jpeg under storage/app/private/
+make artisan cmd='documents:judge-benchmark'     # compare judges on the fixtures (--judge=label=model[@url])
+```
+
+Re-running the import queues only new and failed cases (`--reprocess` queues everything again). Real documents stay under `storage/app/private/`, which is git-ignored.
+
+On the review page, mark each field correct or wrong (with the right value); `/reviews/summary` then reports accuracy per field and how well the rules and JEV caught the wrong values. JEV re-reads the image for every question (~9 s each on an M-series GPU), which is why it only judges fields the rules could not verify.
+
+| Code | |
+|---|---|
+| `app/Console/Commands/ImportDocuments.php`, `app/Jobs/ProcessDocumentExtraction.php` | Import and the per-card pipeline |
+| `app/Documents/Checks/` | MRZ, fiscal code and the cross-checks between them and the extracted fields |
+| `app/Services/JevJudge.php`, `app/Console/Commands/BenchmarkJudges.php` | Judge and its benchmark |
+| `app/Http/Controllers/ReviewController.php`, `app/Documents/ReviewStats.php`, `resources/views/reviews/` | Review pages and summary |
+
 ## Host ports
 
 All bound to `127.0.0.1`. Change them in `docker-compose.yml` if another stack uses the same ones.

@@ -74,12 +74,12 @@ return [
         ],
 
         // Document extraction (OCR + VLM) can run for minutes, so it gets its
-        // own connection whose retry_after outlives the job's 300s timeout.
+        // own connection whose retry_after outlives the longest job's 900s timeout.
         'redis-documents' => [
             'driver' => 'redis',
             'connection' => env('REDIS_QUEUE_CONNECTION', 'default'),
             'queue' => 'documents',
-            'retry_after' => 330,
+            'retry_after' => 960,
             'block_for' => null,
             'after_commit' => false,
         ],
